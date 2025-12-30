@@ -2,7 +2,6 @@ using HarmonyLib;
 using UnityEngine;
 using System.Collections.Generic;
 using Northway.Utils;
-using UnityEngine.NVIDIA;
 
 namespace HolopalmPlus
 {

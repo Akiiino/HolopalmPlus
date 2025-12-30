@@ -53,11 +53,6 @@ public static class WHHelper
             return false;
         }
 
-        if (choice.hasBattle)
-        {
-            return false;
-        }
-
         if (Groundhogs.instance.seenChoices.GetList(choice.story.storyID).ContainsSafe(choice.choiceID))
         {
             return true;

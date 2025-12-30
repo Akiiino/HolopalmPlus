@@ -18,7 +18,7 @@ public class ChoiceButtonPatches
         {
             CleanupButtonOverlays(__instance);
 
-            if (Settings.instance.skipSeenText || !HolopalmSave.GetSetting("showSeenText") || !WHHelper.HasSeenChoice(choice))
+            if (!HolopalmSave.GetSetting("showSeenText") || !WHHelper.HasSeenChoice(choice))
             {
                 return;
             }
@@ -32,7 +32,6 @@ public class ChoiceButtonPatches
                 return;
             }
 
-
             var SetIconMethod = typeof(NWButtonResults).GetMethod("SetIcon", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
             if (SetIconMethod == null)
             {
@@ -42,6 +41,33 @@ public class ChoiceButtonPatches
             string tooltip = TextLocalized.Localize("button_icon_seen");
             string iconName = "checkmark";
             Color iconColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+
+            // Handle battle choices specially
+            if (choice.hasBattle && HolopalmSave.GetSetting("extendedOutcomePreview") && choice.parent != null)
+            {
+                Choice winChoice = choice.parent.choices.Find(c => c.choiceID == "win");
+                Choice loseChoice = choice.parent.choices.Find(c => c.choiceID == "lose");
+
+                string winEffects = winChoice != null ? FormatChoiceEffects(winChoice) : "";
+                string loseEffects = loseChoice != null ? FormatChoiceEffects(loseChoice) : "";
+
+                if (!string.IsNullOrEmpty(winEffects) || !string.IsNullOrEmpty(loseEffects))
+                {
+                    iconName = "other";
+
+                    if (!string.IsNullOrEmpty(winEffects))
+                    {
+                        tooltip += "\nWin:" + winEffects;
+                    }
+                    if (!string.IsNullOrEmpty(loseEffects))
+                    {
+                        tooltip += "\nLose:" + loseEffects;
+                    }
+                }
+
+                SetIconMethod.Invoke(null, [icon, iconName, tooltip, iconColor]);
+                return;
+            }
 
             bool hasLove = false;
             bool hasMemory = false;
@@ -194,7 +220,74 @@ public class ChoiceButtonPatches
         }
     }
 
-    private static void PopulateAllSetsForChoice(ref List<StorySet> allSets, Choice choice, int level = 0)
+    private static string FormatChoiceEffects(Choice choice)
+    {
+        List<StorySet> allSets = new List<StorySet>();
+        PopulateAllSetsForChoice(ref allSets, choice, 0, skipSeenCheck: true);
+
+        List<StorySet> loveSets = new List<StorySet>();
+        List<StorySet> memorySets = new List<StorySet>();
+        List<StorySet> skillSets = new List<StorySet>();
+
+        foreach (var set in allSets)
+        {
+            switch (set.type)
+            {
+                case StorySetType.love:
+                    AddSetConditional(ref loveSets, set);
+                    break;
+                case StorySetType.memory:
+                    AddSetConditional(ref memorySets, set);
+                    break;
+                case StorySetType.skill:
+                    AddSetConditional(ref skillSets, set);
+                    break;
+            }
+        }
+
+        string result = "";
+
+        foreach (var set in loveSets)
+        {
+            Chara chara = Chara.FromID(set.stringID);
+            if (chara != null)
+            {
+                result += "\n  " + GetSignString(set.intValue) + " Friendship with " + chara.nickname;
+            }
+        }
+
+        foreach (var set in memorySets)
+        {
+            if (set.stringID.ParseEnum<MemoryChange>() != MemoryChange.none)
+            {
+                result += "\n  " +
+                    (TextLocalized.CanLocalize("memchange_" + set.stringID)
+                        ? (set.intValue.ToSignedString() + " " + TextLocalized.Localize("memchange_" + set.stringID))
+                        : (set.intValue.ToSignedString() + " " + set.stringID.ToUpperCaseCapitals())
+                    );
+            }
+        }
+
+        foreach (var set in skillSets)
+        {
+            Skill skill = Skill.FromID(set.stringID);
+            if (skill != null)
+            {
+                if (set.intValue < 0 && skill.hasNegativeSkillName)
+                {
+                    result += "\n  + " + skill.skillNameNegative;
+                }
+                else
+                {
+                    result += "\n  " + GetSignString(set.intValue) + " " + skill.skillName;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static void PopulateAllSetsForChoice(ref List<StorySet> allSets, Choice choice, int level = 0, bool skipSeenCheck = false)
     {
         allSets.AddRange(choice.sets);
 
@@ -203,9 +296,9 @@ public class ChoiceButtonPatches
             return;
         }
 
-        if (choice.choices.Count == 1 && WHHelper.HasSeenChoice(choice.choices[0]))
+        if (choice.choices.Count == 1 && (skipSeenCheck || WHHelper.HasSeenChoice(choice.choices[0])))
         {
-            PopulateAllSetsForChoice(ref allSets, choice.choices[0]);
+            PopulateAllSetsForChoice(ref allSets, choice.choices[0], level + 1, skipSeenCheck);
         }
 
         foreach (StorySet storySet in choice.sets)
@@ -219,7 +312,7 @@ public class ChoiceButtonPatches
                     {
                         continue;
                     }
-                    PopulateAllSetsForChoice(ref allSets, choiceById);
+                    PopulateAllSetsForChoice(ref allSets, choiceById, level + 1, skipSeenCheck);
                 }
             }
         }
